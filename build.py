@@ -77,8 +77,17 @@ for item in REPLACE_LIST:
 
 build_script = find_build_script(BSP_NAME)
 build_cmd = build_script + " " + BSP_NAME + " " + APP_NAME
+
 for args in EXTRA_ARGS:
     build_cmd = build_cmd + " " + args
+
+build_cmd_unix = build_cmd
+if os.name == "nt":
+    build_cmd = build_cmd.replace('/', '\\')
+
+print("")
+print("shell command: " + build_cmd_unix)
+
 ret_val = os.system(build_cmd)
 if ret_val:
     print_usage()

@@ -73,6 +73,10 @@ if BSP_PATH and os.path.isdir(BSP_PATH):
 setup_cmd = setup_script + " " + BSP_NAME
 for args in EXTRA_ARGS:
 	setup_cmd = setup_cmd + " " + args
+
+print("")
+print("shell cmd: " + setup_cmd)
+
 ret_val = os.system(setup_cmd)
 if ret_val:
 	print_usage()
