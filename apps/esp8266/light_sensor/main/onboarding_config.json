@@ -1,0 +1,19 @@
+{
+  "onboardingConfig": {
+    "deviceOnboardingId": "Light Sensor",
+    "mnId": "fm1I",
+    "setupId": "002",
+    "vid": "ST_dc0a7e0c-85c3-4ee9-a295-7fd11652ba3f",
+    "deviceTypeId": "Others",
+    "ownershipValidationTypes": [
+      "JUSTWORKS"
+    ],
+    "identityType": "ED25519",
+    "deviceIntegrationProfileKey": {
+      "id": "b3f257a8-dab7-42e0-9369-2579fa93f720",
+      "majorVersion": 0,
+      "minorVersion": 1
+    },
+    "productId": "418e31c2-be1c-41cc-8311-6663d6ab7f3a"
+  }
+}
