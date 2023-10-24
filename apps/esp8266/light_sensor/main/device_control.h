@@ -72,18 +72,11 @@ enum button_gpio_state {
     BUTTON_GPIO_PRESSED = 0,
 };
 
-#define BUTTON_DEBOUNCE_TIME_MS 20
-#define BUTTON_LONG_THRESHOLD_MS 5000
-#define BUTTON_DELAY_MS 300
 
-enum button_event_type {
-    BUTTON_LONG_PRESS = 0,
-    BUTTON_SHORT_PRESS = 1,
-};
-
-void change_switch_state(int switch_state);
-void button_isr_handler(void *arg);
-int get_button_event(int* button_event_type, int* button_event_count);
+//void change_switch_state(int switch_state);
 void led_blink(int switch_state, int delay, int count);
 void change_led_mode(int noti_led_mode);
 void iot_gpio_init(void);
+
+
+void iot_adc_init(void);

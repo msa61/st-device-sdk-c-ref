@@ -23,69 +23,8 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/adc.h"
 
-void change_switch_state(int switch_state)
-{
-    if (switch_state == SWITCH_OFF) {
-        gpio_set_level(GPIO_OUTPUT_MAINLED, MAINLED_GPIO_OFF);
-    } else {
-        gpio_set_level(GPIO_OUTPUT_MAINLED, MAINLED_GPIO_ON);
-    }
-}
-
-int get_button_event(int* button_event_type, int* button_event_count)
-{
-    static uint32_t button_count = 0;
-    static uint32_t button_last_state = BUTTON_GPIO_RELEASED;
-    static TimeOut_t button_timeout;
-    static TickType_t long_press_tick = pdMS_TO_TICKS(BUTTON_LONG_THRESHOLD_MS);
-    static TickType_t button_delay_tick = pdMS_TO_TICKS(BUTTON_DELAY_MS);
-
-    uint32_t gpio_level = 0;
-
-    gpio_level = gpio_get_level(GPIO_INPUT_BUTTON);
-    if (button_last_state != gpio_level) {
-        /* wait debounce time to ignore small ripple of currunt */
-        vTaskDelay( pdMS_TO_TICKS(BUTTON_DEBOUNCE_TIME_MS) );
-        gpio_level = gpio_get_level(GPIO_INPUT_BUTTON);
-        if (button_last_state != gpio_level) {
-            printf("Button event, val: %d, tick: %u\n", gpio_level, (uint32_t)xTaskGetTickCount());
-            button_last_state = gpio_level;
-            if (gpio_level == BUTTON_GPIO_PRESSED) {
-                button_count++;
-            }
-            vTaskSetTimeOutState(&button_timeout);
-            button_delay_tick = pdMS_TO_TICKS(BUTTON_DELAY_MS);
-            long_press_tick = pdMS_TO_TICKS(BUTTON_LONG_THRESHOLD_MS);
-        }
-    } else if (button_count > 0) {
-        if ((gpio_level == BUTTON_GPIO_PRESSED)
-                && (xTaskCheckForTimeOut(&button_timeout, &long_press_tick ) != pdFALSE)) {
-            *button_event_type = BUTTON_LONG_PRESS;
-            *button_event_count = 1;
-            button_count = 0;
-            return true;
-        } else if ((gpio_level == BUTTON_GPIO_RELEASED)
-                && (xTaskCheckForTimeOut(&button_timeout, &button_delay_tick ) != pdFALSE)) {
-            *button_event_type = BUTTON_SHORT_PRESS;
-            *button_event_count = button_count;
-            button_count = 0;
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void led_blink(int switch_state, int delay, int count)
-{
-    for (int i = 0; i < count; i++) {
-        vTaskDelay(delay / portTICK_PERIOD_MS);
-        change_switch_state(1 - switch_state);
-        vTaskDelay(delay / portTICK_PERIOD_MS);
-        change_switch_state(switch_state);
-    }
-}
 
 void change_led_mode(int noti_led_mode)
 {
@@ -107,7 +46,7 @@ void change_led_mode(int noti_led_mode)
         case LED_ANIMATION_MODE_SLOW:
             if (xTaskCheckForTimeOut(&led_timeout, &led_tick ) != pdFALSE) {
                 led_state = 1 - led_state;
-                change_switch_state(led_state);
+                //change_switch_state(led_state);
                 vTaskSetTimeOutState(&led_timeout);
                 if (led_state == SWITCH_ON) {
                     led_tick = pdMS_TO_TICKS(200);
@@ -119,7 +58,7 @@ void change_led_mode(int noti_led_mode)
         case LED_ANIMATION_MODE_FAST:
             if (xTaskCheckForTimeOut(&led_timeout, &led_tick ) != pdFALSE) {
                 led_state = 1 - led_state;
-                change_switch_state(led_state);
+                //change_switch_state(led_state);
                 vTaskSetTimeOutState(&led_timeout);
                 led_tick = pdMS_TO_TICKS(100);
             }
@@ -163,4 +102,14 @@ void iot_gpio_init(void)
 	gpio_set_level(GPIO_OUTPUT_MAINLED_0, 0);
 }
 
+void iot_adc_init(void)
+{
+    adc_config_t adc_config;
 
+    // Depend on menuconfig->Component config->PHY->vdd33_const value
+    // When measuring system voltage(ADC_READ_VDD_MODE), vdd33_const must be set to 255.
+    adc_config.mode = ADC_READ_TOUT_MODE;
+    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
+    adc_init(&adc_config);
+
+}

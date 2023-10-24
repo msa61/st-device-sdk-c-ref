@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "st_dev.h"
 #include "device_control.h"
@@ -31,7 +32,6 @@
 #include "iot_uart_cli.h"
 #include "iot_cli_cmd.h"
 
-#include "caps_switch.h"
 #include "caps_illuminanceMeasurement.h"
 
 // onboarding_config_start is null-terminated string
@@ -47,50 +47,15 @@ static iot_stat_lv_t g_iot_stat_lv;
 
 IOT_CTX* ctx = NULL;
 
-//#define SET_PIN_NUMBER_CONFRIM
 
 static int noti_led_mode = LED_ANIMATION_MODE_IDLE;
 
-static caps_switch_data_t *cap_switch_data;
 static caps_illuminanceMeasurement_data_t *cap_sensor_data;
-int monitor_period_ms = 240000;
+int monitor_period_ms = 20000;  // start with 20sec and switch to 5min once initialized
 
-
-static int get_switch_state(void)
-{
-    const char* switch_value = cap_switch_data->get_switch_value(cap_switch_data);
-    int switch_state = SWITCH_OFF;
-
-    if (!switch_value) {
-        return -1;
-    }
-
-    if (!strcmp(switch_value, caps_helper_switch.attr_switch.value_on)) {
-        switch_state = SWITCH_ON;
-    } else if (!strcmp(switch_value, caps_helper_switch.attr_switch.value_off)) {
-        switch_state = SWITCH_OFF;
-    }
-    return switch_state;
-}
-
-static void cap_switch_cmd_cb(struct caps_switch_data *caps_data)
-{
-    int switch_state = get_switch_state();
-    change_switch_state(switch_state);
-}
 
 static void capability_init()
 {
-    cap_switch_data = caps_switch_initialize(ctx, "main2", NULL, NULL);
-    if (cap_switch_data) {
-        const char *switch_init_value = caps_helper_switch.attr_switch.value_on;
-
-        cap_switch_data->cmd_on_usr_cb = cap_switch_cmd_cb;
-        cap_switch_data->cmd_off_usr_cb = cap_switch_cmd_cb;
-
-        cap_switch_data->set_switch_value(cap_switch_data, switch_init_value);
-    }
-
     cap_sensor_data = caps_illuminanceMeasurement_initialize(ctx, "main", NULL, NULL);
     if (cap_sensor_data) {
         cap_sensor_data->set_illuminance_value(cap_sensor_data, 0);
@@ -116,37 +81,18 @@ static void iot_status_cb(iot_status_t status,
         case IOT_STATUS_IDLE:
         case IOT_STATUS_CONNECTING:
             noti_led_mode = LED_ANIMATION_MODE_IDLE;
-            change_switch_state(get_switch_state());
+            //change_switch_state(get_switch_state());
             break;
         default:
             break;
     }
 }
 
-#if defined(SET_PIN_NUMBER_CONFRIM)
-void* pin_num_memcpy(void *dest, const void *src, unsigned int count)
-{
-    unsigned int i;
-    for (i = 0; i < count; i++)
-        *((char*)dest + i) = *((char*)src + i);
-    return dest;
-}
-#endif
 
 static void connection_start(void)
 {
     iot_pin_t *pin_num = NULL;
     int err;
-
-#if defined(SET_PIN_NUMBER_CONFRIM)
-    pin_num = (iot_pin_t *) malloc(sizeof(iot_pin_t));
-    if(!pin_num)
-        printf("failed to malloc for iot_pin_t\n");
-
-    // to decide the pin confirmation number(ex. "12345678"). It will use for easysetup.
-    //    pin confirmation number must be 8 digit number.
-    pin_num_memcpy(pin_num, "12345678", sizeof(iot_pin_t));
-#endif
 
     // process on-boarding procedure. There is nothing more to do on the app side than call the API.
     err = st_conn_start(ctx, (st_status_cb)&iot_status_cb, IOT_STATUS_ALL, NULL, pin_num);
@@ -158,11 +104,6 @@ static void connection_start(void)
     }
 }
 
-static void connection_start_task(void *arg)
-{
-    connection_start();
-    vTaskDelete(NULL);
-}
 
 static void iot_noti_cb(iot_noti_data_t *noti_data, void *noti_usr_data)
 {
@@ -176,127 +117,55 @@ static void iot_noti_cb(iot_noti_data_t *noti_data, void *noti_usr_data)
     }
 }
 
-void button_event(IOT_CAP_HANDLE *handle, int type, int count)
-{
-    if (type == BUTTON_SHORT_PRESS) {
-        printf("Button short press, count: %d\n", count);
-        switch(count) {
-            case 1:
-                if (g_iot_status == IOT_STATUS_NEED_INTERACT) {
-                    st_conn_ownership_confirm(ctx, true);
-                    noti_led_mode = LED_ANIMATION_MODE_IDLE;
-                    change_switch_state(get_switch_state());
-                } else {
-                    if (get_switch_state() == SWITCH_ON) {
-                        change_switch_state(SWITCH_OFF);
-                        cap_switch_data->set_switch_value(cap_switch_data, caps_helper_switch.attr_switch.value_off);
-                        cap_switch_data->attr_switch_send(cap_switch_data);
-                    } else {
-                        change_switch_state(SWITCH_ON);
-                        cap_switch_data->set_switch_value(cap_switch_data, caps_helper_switch.attr_switch.value_on);
-                        cap_switch_data->attr_switch_send(cap_switch_data);
-                    }
-                }
-                break;
-            case 5:
-                /* clean-up provisioning & registered data with reboot option*/
-                st_conn_cleanup(ctx, true);
-
-                break;
-            default:
-                led_blink(get_switch_state(), 100, count);
-                break;
-        }
-    } else if (type == BUTTON_LONG_PRESS) {
-        printf("Button long press, iot_status: %d\n", g_iot_status);
-        led_blink(get_switch_state(), 100, 3);
-        st_conn_cleanup(ctx, false);
-        xTaskCreate(connection_start_task, "connection_task", 2048, NULL, 10, NULL);
-    }
-}
 
 static void app_main_task(void *arg)
 {
-    IOT_CAP_HANDLE *handle = (IOT_CAP_HANDLE *)arg;
-
-    int button_event_type;
-    int button_event_count;
-
-
-    int sensor_event_count = 0;
     TimeOut_t monitor_timeout;
     TickType_t monitor_period_tick = pdMS_TO_TICKS(monitor_period_ms);
     double previous_1 = 0;
     double previous_2 = 0;
 
     for (;;) {
-        if (get_button_event(&button_event_type, &button_event_count)) {
-            button_event(handle, button_event_type, button_event_count);
-        }
         if (noti_led_mode != LED_ANIMATION_MODE_IDLE) {
             change_led_mode(noti_led_mode);
         }
 
+        if ((xTaskCheckForTimeOut(&monitor_timeout, &monitor_period_tick) != pdFALSE)) {
+            vTaskSetTimeOutState(&monitor_timeout);
+            monitor_period_tick = pdMS_TO_TICKS(monitor_period_ms);
 
-//if (sensor_event_count > 1000)
-//{
-  
+            uint16_t adc_data;
+            esp_err_t err = adc_read(&adc_data);
+            //printf("\nAnalog error: %i\n", (int)err);
+            printf("Analog Read: %i =  %f lumins\n", adc_data, (double)(1024-adc_data)/1024*100000);
 
+            double curLumins = ((double)(1024-adc_data)/1024*100000);
+            printf("cur: %f,  prev: %f,  prevx2: %f\n", curLumins, previous_1, previous_2);
 
+            double avgLumins = (curLumins + previous_1 + previous_2) / 300;
+            avgLumins = round(avgLumins);
+            avgLumins *= 100;
+            printf("avg: %f\n", avgLumins);
 
-    if ((xTaskCheckForTimeOut(&monitor_timeout, &monitor_period_tick) != pdFALSE)) {
-        vTaskSetTimeOutState(&monitor_timeout);
-        monitor_period_tick = pdMS_TO_TICKS(monitor_period_ms);
+            if (previous_2 != 0)
+            {
+                printf("sending data: %f\n\n", avgLumins);
+                cap_sensor_data->set_illuminance_value(cap_sensor_data, avgLumins);
+                cap_sensor_data->attr_illuminance_send(cap_sensor_data);
 
+                // switch to longer wait
+                monitor_period_ms = 300000; // 5mins
+            }
 
-
-    uint16_t adc_data;
-    esp_err_t err = adc_read(&adc_data);
-    //printf("\nAnalog error: %i\n", (int)err);
-    printf("Analog Read: %i =  %f lumins\n", adc_data, (double)(1024-adc_data)/1024*10000);
-
-    double curLumins = ((double)(1024-adc_data)/1024*10000);
-
-    printf("cur: %f,  prev: %f,  prevx2: %f\n", curLumins, previous_1, previous_2);
-
-    double avgLumins = (curLumins + previous_1 + previous_2) / 3;
-    printf("avg: %f\n\n", avgLumins);
-
-    previous_2 = previous_1;
-    previous_1 = curLumins;
-
-        cap_sensor_data->set_illuminance_value(cap_sensor_data, avgLumins);
-        cap_sensor_data->attr_illuminance_send(cap_sensor_data);
-    }
-
-
-
-
-
-
-
-//sensor_event_count = 0;
-//}
-//sensor_event_count++;
-
-
-
+            previous_2 = previous_1;
+            previous_1 = curLumins;
+        }
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
 
-void iot_adc_init(void)
-{
-    adc_config_t adc_config;
 
-    // Depend on menuconfig->Component config->PHY->vdd33_const value
-    // When measuring system voltage(ADC_READ_VDD_MODE), vdd33_const must be set to 255.
-    adc_config.mode = ADC_READ_TOUT_MODE;
-    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
-    adc_init(&adc_config);
-
-}
 
 void app_main(void)
 {
