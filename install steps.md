@@ -123,6 +123,8 @@ Per https://docs.espressif.com/projects/esp8266-rtos-sdk/en/latest/get-started/w
 5. Manually run the build*.sh displayed in the updated build.py
 
         tools/esp8266/build_esp8266.sh esp8266 light_example flash monitor
+        or
+        tools/esp8266/build_esp8266.sh esp8266 light_sensor flash monitor
 
 6. Update skdconfig in app directory either manually:
    
@@ -198,3 +200,11 @@ Per https://docs.espressif.com/projects/esp8266-rtos-sdk/en/latest/get-started/w
 3. Add new device to your SmartThings account
    - "Add Device"
    - scan your QR code
+
+
+
+<h2>Other tools</h2>
+
+to clear chip:
+
+        python -m esptool --chip esp8266 erase_flash
