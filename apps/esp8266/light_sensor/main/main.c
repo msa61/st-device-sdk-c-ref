@@ -32,6 +32,7 @@
 #include "iot_cli_cmd.h"
 
 #include "caps_switch.h"
+#include "caps_illuminanceMeasurement.h"
 
 // onboarding_config_start is null-terminated string
 extern const uint8_t onboarding_config_start[]    asm("_binary_onboarding_config_json_start");
@@ -51,6 +52,9 @@ IOT_CTX* ctx = NULL;
 static int noti_led_mode = LED_ANIMATION_MODE_IDLE;
 
 static caps_switch_data_t *cap_switch_data;
+static caps_illuminanceMeasurement_data_t *cap_sensor_data;
+int monitor_period_ms = 240000;
+
 
 static int get_switch_state(void)
 {
@@ -77,7 +81,7 @@ static void cap_switch_cmd_cb(struct caps_switch_data *caps_data)
 
 static void capability_init()
 {
-    cap_switch_data = caps_switch_initialize(ctx, "main", NULL, NULL);
+    cap_switch_data = caps_switch_initialize(ctx, "main2", NULL, NULL);
     if (cap_switch_data) {
         const char *switch_init_value = caps_helper_switch.attr_switch.value_on;
 
@@ -86,6 +90,14 @@ static void capability_init()
 
         cap_switch_data->set_switch_value(cap_switch_data, switch_init_value);
     }
+
+    cap_sensor_data = caps_illuminanceMeasurement_initialize(ctx, "main", NULL, NULL);
+    if (cap_sensor_data) {
+        cap_sensor_data->set_illuminance_value(cap_sensor_data, 0);
+
+        cap_sensor_data->set_illuminance_unit(cap_sensor_data, caps_helper_illuminanceMeasurement.attr_illuminance.unit_lux);
+    }
+
 }
 
 static void iot_status_cb(iot_status_t status,
@@ -209,7 +221,13 @@ static void app_main_task(void *arg)
 
     int button_event_type;
     int button_event_count;
+
+
     int sensor_event_count = 0;
+    TimeOut_t monitor_timeout;
+    TickType_t monitor_period_tick = pdMS_TO_TICKS(monitor_period_ms);
+    double previous_1 = 0;
+    double previous_2 = 0;
 
     for (;;) {
         if (get_button_event(&button_event_type, &button_event_count)) {
@@ -220,15 +238,46 @@ static void app_main_task(void *arg)
         }
 
 
-if (sensor_event_count > 1000)
-{
+//if (sensor_event_count > 1000)
+//{
+  
+
+
+
+    if ((xTaskCheckForTimeOut(&monitor_timeout, &monitor_period_tick) != pdFALSE)) {
+        vTaskSetTimeOutState(&monitor_timeout);
+        monitor_period_tick = pdMS_TO_TICKS(monitor_period_ms);
+
+
+
     uint16_t adc_data;
     esp_err_t err = adc_read(&adc_data);
     //printf("\nAnalog error: %i\n", (int)err);
-    printf("Analog Read: %i =  %d lumins %i %d\n", adc_data, (1024-adc_data)/1024*10000, (1024-adc_data), (1024-adc_data)/1024);
-sensor_event_count = 0;
-}
-sensor_event_count++;
+    printf("Analog Read: %i =  %f lumins\n", adc_data, (double)(1024-adc_data)/1024*10000);
+
+    double curLumins = ((double)(1024-adc_data)/1024*10000);
+
+    printf("cur: %f,  prev: %f,  prevx2: %f\n", curLumins, previous_1, previous_2);
+
+    double avgLumins = (curLumins + previous_1 + previous_2) / 3;
+    printf("avg: %f\n\n", avgLumins);
+
+    previous_2 = previous_1;
+    previous_1 = curLumins;
+
+        cap_sensor_data->set_illuminance_value(cap_sensor_data, avgLumins);
+        cap_sensor_data->attr_illuminance_send(cap_sensor_data);
+    }
+
+
+
+
+
+
+
+//sensor_event_count = 0;
+//}
+//sensor_event_count++;
 
 
 
